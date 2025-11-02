@@ -1,4 +1,6 @@
+using System;
 using System.Collections.ObjectModel;
+using System.Text;
 using FileMove.Api.Models;
 
 namespace FileMove.Api.Services;
@@ -7,14 +9,17 @@ public class FileMover : IFileMover
 {
     public FileMoveSummary MoveFiles(MoveFilesRequest request)
     {
-        if (!Directory.Exists(request.SearchDirectory))
+        var searchDirectory = NormalizeDirectoryPath(request.SearchDirectory);
+        var destinationDirectory = NormalizeDirectoryPath(request.DestinationDirectory);
+
+        if (!Directory.Exists(searchDirectory))
         {
-            throw new DirectoryNotFoundException($"A pasta de busca '{request.SearchDirectory}' não existe.");
+            throw new DirectoryNotFoundException($"A pasta de busca '{searchDirectory}' não existe.");
         }
 
         try
         {
-            Directory.CreateDirectory(request.DestinationDirectory);
+            Directory.CreateDirectory(destinationDirectory);
         }
         catch (Exception ex)
         {
@@ -25,7 +30,7 @@ public class FileMover : IFileMover
 
         try
         {
-            files = Directory.GetFiles(request.SearchDirectory, "*", SearchOption.AllDirectories);
+            files = Directory.GetFiles(searchDirectory, "*", SearchOption.AllDirectories);
         }
         catch (Exception ex)
         {
@@ -37,8 +42,8 @@ public class FileMover : IFileMover
 
         foreach (var sourcePath in files)
         {
-            var relativePath = Path.GetRelativePath(request.SearchDirectory, sourcePath);
-            var destinationPath = Path.Combine(request.DestinationDirectory, relativePath);
+            var relativePath = Path.GetRelativePath(searchDirectory, sourcePath);
+            var destinationPath = Path.Combine(destinationDirectory, relativePath);
 
             try
             {
@@ -62,5 +67,55 @@ public class FileMover : IFileMover
             MovedFiles: movedCount,
             FailedFiles: failures.Count,
             Failures: new ReadOnlyCollection<FileMoveFailure>(failures));
+    }
+
+    private static string NormalizeDirectoryPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return path;
+        }
+
+        var trimmed = path.Trim();
+
+        if (Path.DirectorySeparatorChar == '\\')
+        {
+            trimmed = trimmed.Replace('/', Path.DirectorySeparatorChar);
+        }
+        else
+        {
+            trimmed = trimmed.Replace('\\', Path.DirectorySeparatorChar);
+        }
+
+        var builder = new StringBuilder(trimmed.Length);
+        var previousWasSeparator = false;
+        var startIndex = 0;
+        var preserveUncPrefix = trimmed.StartsWith("\\\\", StringComparison.Ordinal);
+
+        if (preserveUncPrefix)
+        {
+            builder.Append("\\\\");
+            startIndex = 2;
+        }
+
+        for (var i = startIndex; i < trimmed.Length; i++)
+        {
+            var current = trimmed[i];
+            if (current == Path.DirectorySeparatorChar)
+            {
+                if (!previousWasSeparator)
+                {
+                    builder.Append(current);
+                    previousWasSeparator = true;
+                }
+            }
+            else
+            {
+                builder.Append(current);
+                previousWasSeparator = false;
+            }
+        }
+
+        return builder.ToString();
     }
 }
