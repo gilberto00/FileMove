@@ -19,6 +19,19 @@ public class FileMover : IFileMover
 
         try
         {
+            EnsureDirectoriesAreDistinct(searchDirectory, destinationDirectory);
+        }
+        catch (IOException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new IOException($"Não foi possível validar as pastas informadas: {ex.Message}", ex);
+        }
+
+        try
+        {
             Directory.CreateDirectory(destinationDirectory);
         }
         catch (Exception ex)
@@ -67,6 +80,21 @@ public class FileMover : IFileMover
             MovedFiles: movedCount,
             FailedFiles: failures.Count,
             Failures: new ReadOnlyCollection<FileMoveFailure>(failures));
+    }
+
+    private static void EnsureDirectoriesAreDistinct(string searchDirectory, string destinationDirectory)
+    {
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        var searchFullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(searchDirectory));
+        var destinationFullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(destinationDirectory));
+
+        if (string.Equals(searchFullPath, destinationFullPath, comparison))
+        {
+            throw new IOException("A pasta de destino deve ser diferente da pasta de busca.");
+        }
     }
 
     private static string NormalizeDirectoryPath(string path)
