@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Text;
 using FileMove.Api.Models;
@@ -39,11 +40,11 @@ public class FileMover : IFileMover
             throw new IOException($"Não foi possível preparar a pasta de destino: {ex.Message}", ex);
         }
 
-        string[] files;
+        IEnumerable<string> files;
 
         try
         {
-            files = Directory.GetFiles(searchDirectory, "*", SearchOption.AllDirectories);
+            files = Directory.EnumerateFiles(searchDirectory, "*", SearchOption.AllDirectories);
         }
         catch (Exception ex)
         {
@@ -55,18 +56,17 @@ public class FileMover : IFileMover
 
         foreach (var sourcePath in files)
         {
-            var relativePath = Path.GetRelativePath(searchDirectory, sourcePath);
-            var destinationPath = Path.Combine(destinationDirectory, relativePath);
+            var fileName = Path.GetFileName(sourcePath);
+            if (string.IsNullOrEmpty(fileName))
+            {
+                continue;
+            }
+
+            var destinationPath = BuildUniqueDestinationPath(destinationDirectory, fileName);
 
             try
             {
-                var destinationFolder = Path.GetDirectoryName(destinationPath);
-                if (!string.IsNullOrEmpty(destinationFolder))
-                {
-                    Directory.CreateDirectory(destinationFolder);
-                }
-
-                File.Move(sourcePath, destinationPath, overwrite: true);
+                File.Move(sourcePath, destinationPath);
                 movedCount++;
             }
             catch (Exception ex)
@@ -76,10 +76,40 @@ public class FileMover : IFileMover
         }
 
         return new FileMoveSummary(
-            TotalFiles: files.Length,
+            TotalFiles: movedCount + failures.Count,
             MovedFiles: movedCount,
             FailedFiles: failures.Count,
             Failures: new ReadOnlyCollection<FileMoveFailure>(failures));
+    }
+
+    private static string BuildUniqueDestinationPath(string destinationDirectory, string fileName)
+    {
+        var candidate = Path.Combine(destinationDirectory, fileName);
+
+        if (!File.Exists(candidate))
+        {
+            return candidate;
+        }
+
+        var name = Path.GetFileNameWithoutExtension(fileName);
+        var extension = Path.GetExtension(fileName);
+        var counter = 1;
+
+        while (true)
+        {
+            var uniqueFileName = string.IsNullOrEmpty(extension)
+                ? $"{name} ({counter})"
+                : $"{name} ({counter}){extension}";
+
+            candidate = Path.Combine(destinationDirectory, uniqueFileName);
+
+            if (!File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            counter++;
+        }
     }
 
     private static void EnsureDirectoriesAreDistinct(string searchDirectory, string destinationDirectory)
